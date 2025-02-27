@@ -1,13 +1,17 @@
 // server.js
+import dotenv from 'dotenv';
+// Load dotenv first
+dotenv.config();
+
+// Then import other services
 import express from 'express';
 import CryptoService from '../services/CryptoService.js';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import TelegramService from '../services/TelegramService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
 const cryptoService = new CryptoService();
+const telegramService = new TelegramService();
 
 app.use(express.json());
 
@@ -105,6 +109,28 @@ app.post('/api/cache/clear', asyncHandler(async (req, res) => {
     success: true,
     message: 'Cache cleared successfully'
   });
+}));
+
+// Send Telegram message
+app.post('/api/telegram/send', asyncHandler(async (req, res) => {
+  const { username, message } = req.body;
+
+  if (!username || !message) {
+    return res.status(400).json({
+      success: false,
+      error: 'Both username and message are required'
+    });
+  }
+
+  try {
+    await telegramService.sendMessage(username, message);
+    res.json({
+      success: true,
+      message: 'Telegram message sent successfully'
+    });
+  } catch (error) {
+    throw error;
+  }
 }));
 
 // Error handling middleware
