@@ -65,7 +65,7 @@ class TelegramService {
       const response = await axios.post(`${this.apiUrl}/sendMessage`, {
         chat_id: chatId,
         text: message,
-        parse_mode: 'HTML'
+        parse_mode: 'Markdown'
       });
 
       if (!response.data.ok) {
