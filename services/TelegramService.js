@@ -2,6 +2,7 @@ import axios from 'axios';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import dotenv from 'dotenv';
+import dbConnect from '../utils/dbConnect.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,25 +24,28 @@ class TelegramService {
   }
 
   /**
-   * Find chat ID for a given username from updates
+   * Find chat ID for a given username from the database
    * @param {string} username - Telegram username to find
    * @returns {Promise<string|null>} The chat ID if found
    */
   async findChatIdByUsername(username) {
-    const updates = await this.getUpdates();
-    if (!updates.ok) {
-      throw new Error('Failed to get updates from Telegram');
+    try {
+      const client = await dbConnect();
+      const db = client.db("ctxbt-signal-flow");
+      const usersCollection = db.collection("users");
+
+      // Find user by telegram username
+      const user = await usersCollection.findOne({ telegramId: username });
+
+      if (!user || !user.chatId) {
+        throw new Error('User not found or chat ID not available in database.');
+      }
+
+      return user.chatId;
+    } catch (error) {
+      console.error('Error finding chat ID:', error);
+      throw error;
     }
-
-    const userUpdate = updates.result.find((update) => 
-      update.message?.from?.username?.toLowerCase() === username.toLowerCase()
-    );
-
-    if (!userUpdate) {
-      throw new Error('User not found. Please start a chat with the bot first.');
-    }
-
-    return userUpdate.message.chat.id;
   }
 
   /**
