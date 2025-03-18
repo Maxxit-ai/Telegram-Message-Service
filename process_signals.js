@@ -3,6 +3,16 @@ const Papa = require('papaparse');
 
 // Function to parse tweet date from "DD/MM/YYYY" or "D-M-YYYY" to UTC timestamp
 function parseTweetDate(dateStr) {
+    // Handle ISO 8601 format (e.g., "2025-03-09T04:17:46.000Z")
+    if (dateStr.includes('T') && dateStr.endsWith('Z')) {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) {
+            throw new Error(`Invalid ISO date format: ${dateStr}`);
+        }
+        return date.getTime(); // Returns timestamp in milliseconds UTC
+    }
+
+    // Handle "DD/MM/YYYY" or "D-M-YYYY" formats
     let delimiter;
     if (dateStr.includes('/')) {
         delimiter = '/';
@@ -14,7 +24,6 @@ function parseTweetDate(dateStr) {
     const [day, month, year] = dateStr.split(delimiter).map(Number);
     return Date.UTC(year, month - 1, day); // Timestamp for 00:00:00 UTC
 }
-
 // Function to fetch 365-day price data from CoinGecko
 async function fetchPriceData(coinId) {
     const url = `https://www.coingecko.com/price_charts/${coinId}/usd/365_days.json`;
@@ -136,5 +145,5 @@ async function processCSV(inputCSV, outputCSV) {
 }
 
 // Run the script
-processCSV('abhi_sheet1_formatted.csv', 'abhi_sheet1_pnl.csv')
+processCSV('purvik_backtest.csv', 'purvik_pnl.csv')
     .catch(error => console.error('Error:', error));
