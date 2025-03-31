@@ -67,7 +67,6 @@ async function processCSV(inputCSV, outputCSV) {
     }
 
     // Process each row
-    // Process each row
     for (const row of rows) {
         const tokenId = row["Token ID"];
         if (!priceCache[tokenId]) {
