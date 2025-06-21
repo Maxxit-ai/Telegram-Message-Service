@@ -21,6 +21,14 @@ const asyncHandler = (fn) => (req, res, next) =>
 
 // API Endpoints
 
+// Simple health check endpoint for monitoring
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Get token data by ID
 app.get('/api/token/:coinId', asyncHandler(async (req, res) => {
   const { coinId } = req.params;
