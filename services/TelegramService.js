@@ -79,18 +79,43 @@ class TelegramService {
           messageText: userData.messageText.substring(0, 100) + '...' // Log first 100 chars
         });
 
-        // Store the comprehensive data in database
-        await this.handleSimulateTradeRequest(userData);
+        // Store the comprehensive data in database and get API response
+        const apiResponse = await this.handleSimulateTradeRequest(userData);
 
-        // Acknowledge the callback query
-        await ctx.answerCbQuery('Trade simulation initiated! 🚀');
+        // Format reply message based on API response
+        let replyMessage = '';
+        if (apiResponse && apiResponse.status === 'success') {
+          replyMessage = `✅ **Trade Simulation Successful!**\n\n` +
+            `🔹 **Signal ID**: ${apiResponse.signalId}\n` +
+            `🔹 **Network**: ${apiResponse.result?.tradingPair?.networkKey || 'N/A'}\n` +
+            `🔹 **Safe Address**: ${apiResponse.result?.tradingPair?.safeAddress || 'N/A'}\n` +
+            `🔹 **Trade ID**: ${apiResponse.result?.tradingPair?.tradeId || 'N/A'}\n` +
+            `🔹 **Status**: ${apiResponse.result?.tradingPair?.status || 'N/A'}\n\n` +
+            `🚀 Your trade simulation has been processed successfully!`;
 
-        // Send confirmation message
-        await ctx.reply('✅ Trade simulation has been initiated for this signal. You will receive updates shortly.');
+          await ctx.answerCbQuery('✅ Trade simulation completed successfully!');
+        } else if (apiResponse && apiResponse.status === 'failed') {
+          const errorMsg = apiResponse.result?.error || apiResponse.result?.tradingPair?.error || 'Unknown error';
+          replyMessage = `❌ **Trade Simulation Failed**\n\n` +
+            `🔹 **Signal ID**: ${apiResponse.signalId}\n` +
+            `🔹 **Network**: ${apiResponse.result?.tradingPair?.networkKey || 'N/A'}\n` +
+            `🔹 **Error**: ${errorMsg}\n\n` +
+            `Please try again or contact support if the issue persists.`;
+
+          await ctx.answerCbQuery('❌ Trade simulation failed');
+        } else {
+          // Fallback for unexpected response format
+          replyMessage = '✅ Trade simulation has been initiated for this signal. You will receive updates shortly.';
+          await ctx.answerCbQuery('Trade simulation initiated! 🚀');
+        }
+
+        // Send the formatted reply message
+        await ctx.reply(replyMessage);
 
       } catch (error) {
         console.error('Error handling simulate trade callback:', error);
         await ctx.answerCbQuery('❌ Error processing simulation request');
+        await ctx.reply('❌ Sorry, there was an error processing your trade simulation. Please try again later.');
       }
     });
 
@@ -291,6 +316,9 @@ class TelegramService {
       console.log('Simulation record:', simulationRecord);
       await simulationCollection.insertOne(simulationRecord);
       console.log('Simulation request stored with ID:', simulationRecord._id);
+
+      // Return the API response for the callback handler to use
+      return apiResponse;
 
     } catch (error) {
       console.error('Error storing comprehensive simulation request:', error);
