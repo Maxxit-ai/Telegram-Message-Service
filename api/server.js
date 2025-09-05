@@ -243,7 +243,8 @@ app.post('/api/telegram/send', asyncHandler(async (req, res) => {
   }
 
   try {
-    await telegramService.sendMessage(username, message);
+    const response = await telegramService.sendMessage(username, message);
+    console.log('Telegram message sent successfully', response);
     res.json({
       success: true,
       message: 'Telegram message sent successfully'
@@ -266,7 +267,7 @@ app.post('/api/telegram/send-test-signal', asyncHandler(async (req, res) => {
 
   const testSignalMessage = `🚀 **Bullish Alert** 🚀
 
-🏛️ **Token**: COS (contentos)
+🏛️ **Token**: PEPE (pepe)
 📈 **Signal**: Buy
 💰 **Entry Price**: $0.003
 🎯 **Targets**:
@@ -279,7 +280,8 @@ TP2: $0.0036
 Falling wedge breakout signaled with high volume, suggesting potential bullish reversal. Entry at current dip with tight stop-loss. Monitor volume sustainability and retest of wedge resistance. Risk management crucial amid recent 12.4% drop.`;
 
   try {
-    await telegramService.sendMessage(username, testSignalMessage);
+    const response = await telegramService.sendMessage(username, testSignalMessage);
+    console.log('Test bullish signal message sent successfully', response);
     res.json({
       success: true,
       message: 'Test bullish signal sent successfully with Simulate Trade button'
@@ -366,7 +368,7 @@ app.use((err, req, res, next) => {
 // Start server
 app.listen(port, async () => {
   console.log(`Crypto API server running on port ${port}`);
-  
+
   // Start the Telegram bot
   try {
     await telegramService.startBot();

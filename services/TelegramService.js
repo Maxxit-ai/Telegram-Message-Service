@@ -21,7 +21,7 @@ class TelegramService {
     if (!process.env.TELEGRAM_BOT_TOKEN) {
       throw new Error('TELEGRAM_BOT_TOKEN is not defined in environment variables');
     }
-    
+
     // Initialize both Telegraf and axios for backward compatibility
     this.bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
     this.apiUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}`;
@@ -46,25 +46,25 @@ class TelegramService {
         const userData = {
           // User identification
           username: ctx.from.username,
-          
+
           // Chat information
           chatId: ctx.chat?.id,
           chatType: ctx.chat?.type, // 'private', 'group', 'supergroup', 'channel'
           chatUsername: ctx.chat?.username,
-          
+
           // Message information
           messageId: ctx.callbackQuery.message.message_id,
           messageText: ctx.callbackQuery.message.text,
           messageDate: ctx.callbackQuery.message.date,
-          
+
           // Callback query information
           callbackQueryId: ctx.callbackQuery.id,
           callbackData: callbackData,
           callbackQueryFrom: ctx.callbackQuery.from,
-          
+
           // Additional context
           chatInstance: ctx.callbackQuery.chat_instance,
-          
+
           // Timestamps
           callbackTimestamp: new Date(),
           messageTimestamp: ctx.callbackQuery.message.date ? new Date(ctx.callbackQuery.message.date * 1000) : null
@@ -101,6 +101,136 @@ class TelegramService {
   }
 
   /**
+   * Parse trading signal data from message text
+   * @param {string} message - The message text containing trading signal
+   * @returns {object} Parsed trading data
+   */
+  parseSignalMessage(message) {
+    const parsePrice = (priceStr) => {
+      if (!priceStr) return null;
+      const match = priceStr.match(/\$?(\d+\.?\d*)/);
+      return match ? parseFloat(match[1]) : null;
+    };
+
+    // Extract token (uppercase token before parentheses)
+    const tokenMatch = message.match(/🏛️ Token:\s*([A-Z]+)\s*\(/);
+    const token = tokenMatch ? tokenMatch[1] : null;
+
+    // Extract TP1
+    const tp1Match = message.match(/TP1:\s*\$?(\d+\.?\d*)/);
+    const tp1 = tp1Match ? parseFloat(tp1Match[1]) : null;
+
+    // Extract TP2
+    const tp2Match = message.match(/TP2:\s*\$?(\d+\.?\d*)/);
+    const tp2 = tp2Match ? parseFloat(tp2Match[1]) : null;
+
+    // Extract Stop Loss
+    const slMatch = message.match(/🛑 Stop Loss:\s*\$?(\d+\.?\d*)/);
+    const sl = slMatch ? parseFloat(slMatch[1]) : null;
+
+    // Extract Entry Price
+    const entryMatch = message.match(/💰 Entry Price:\s*\$?(\d+\.?\d*)/);
+    const entryPrice = entryMatch ? parseFloat(entryMatch[1]) : null;
+
+    return {
+      token,
+      tp1,
+      tp2,
+      sl,
+      entryPrice
+    };
+  }
+
+  /**
+   * Fetch user data and safe address from databases
+   * @param {string} telegramUsername - The telegram username
+   * @returns {Promise<object>} Object containing twitterId and safeAddress
+   */
+  async fetchUserData(telegramUsername) {
+    try {
+      const client = await dbConnect();
+
+      // First, find user in ctxbt-signal-flow database
+      const ctxbtDb = client.db("ctxbt-signal-flow");
+      const usersCollection = ctxbtDb.collection("users");
+
+      const user = await usersCollection.findOne({ telegramId: telegramUsername });
+      if (!user || !user.twitterId) {
+        throw new Error(`User not found or twitterId not available for telegram username: ${telegramUsername}`);
+      }
+
+      const twitterId = user.twitterId;
+
+      // Second, find safe in safe-deployment-service database
+      const safeDb = client.db("safe-deployment-service");
+      const safesCollection = safeDb.collection("safes");
+      console.log("twitterId", twitterId);
+      const safe = await safesCollection.findOne({ "userInfo.userId": twitterId });
+      console.log("safe", safe);
+      if (!safe || !safe.deployments?.arbitrum?.address) {
+        throw new Error(`Safe not found or arbitrum address not available for twitterId: ${twitterId}`);
+      }
+
+      const safeAddress = safe.deployments.arbitrum.address;
+
+      return {
+        username: twitterId,
+        safeAddress
+      };
+
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Simulate trade by calling the signal processing API
+   * @param {object} signalData - Parsed signal data
+   * @param {string} username - Twitter ID
+   * @param {string} safeAddress - Safe address
+   * @returns {Promise<object>} API response
+   */
+  async simulateTrade(signalData, username, safeAddress) {
+    try {
+      // Calculate current price as average of TP1 and SL if available
+      const currentPrice = signalData.entryPrice ||
+        (signalData.tp1 && signalData.sl ? (signalData.tp1 + signalData.sl) / 2 : null);
+
+      // Calculate max exit time as next day from current date
+      const maxExitTime = new Date();
+      maxExitTime.setDate(maxExitTime.getDate() + 1);
+
+      const apiBody = {
+        "Signal Message": "buy",
+        "Token Mentioned": signalData.token,
+        "TP1": signalData.tp1,
+        "TP2": signalData.tp2,
+        "SL": signalData.sl,
+        "Current Price": currentPrice,
+        "Max Exit Time": { "$date": maxExitTime },
+        "username": username,
+        "safeAddress": safeAddress
+      };
+
+      console.log('Calling signal processing API with body:', apiBody);
+
+      const response = await axios.post('https://safetrading.maxxit.ai/api/signal/process', apiBody, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('Signal processing API response:', response.data);
+      return response.data;
+
+    } catch (error) {
+      console.error('Error calling signal processing API:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Handle simulate trade request with comprehensive user and action data
    */
   async handleSimulateTradeRequest(userData) {
@@ -114,38 +244,53 @@ class TelegramService {
         // Basic simulation info
         status: 'initiated',
         timestamp: new Date(),
-        
+
         // User identification
         username: userData.username,
-        
+
         // Chat information
         chatId: userData.chatId,
         chatType: userData.chatType,
         chatUsername: userData.chatUsername,
-        
+
         // Message information
         messageId: userData.messageId,
         messageText: userData.messageText,
         messageDate: userData.messageDate,
-        
+
         // Callback query information
         callbackQueryId: userData.callbackQueryId,
         callbackData: userData.callbackData,
         callbackQueryFrom: userData.callbackQueryFrom,
-        
+
         // Additional context
         chatInstance: userData.chatInstance,
-        
+
         // Timestamps
         callbackTimestamp: userData.callbackTimestamp,
         messageTimestamp: userData.messageTimestamp
       };
 
+      // Parse signal message to extract trading data
+      const signalData = this.parseSignalMessage(userData.messageText);
+      console.log('Parsed signal data:', signalData);
+
+      // Fetch user data and safe address
+      const userDataResult = await this.fetchUserData(userData.username);
+      console.log('Fetched user data:', userDataResult);
+
+      // Simulate trade by calling the API
+      const apiResponse = await this.simulateTrade(signalData, userDataResult.username, userDataResult.safeAddress);
+
+      // Add API response to simulation record
+      simulationRecord.apiResponse = apiResponse;
+      simulationRecord.signalData = signalData;
+      simulationRecord.twitterId = userDataResult.username;
+      simulationRecord.safeAddress = userDataResult.safeAddress;
+
+      console.log('Simulation record:', simulationRecord);
       await simulationCollection.insertOne(simulationRecord);
       console.log('Simulation request stored with ID:', simulationRecord._id);
-
-      // Here you can add additional logic for trade simulation
-      // For example, parsing the signal message and creating a simulated trade
 
     } catch (error) {
       console.error('Error storing comprehensive simulation request:', error);
@@ -162,7 +307,7 @@ class TelegramService {
     try {
       const client = await dbConnect();
       const db = client.db("ctxbt-signal-flow");
-      const usersCollection = db.collection("users_telegram_signal_simulation_testing");
+      const usersCollection = db.collection("users");
 
       // Find user by telegram username
       const user = await usersCollection.findOne({ telegramId: username });
@@ -197,13 +342,13 @@ class TelegramService {
     try {
       // Remove @ if present
       const cleanUsername = username.replace('@', '');
-      
+
       // Find chat ID from database
       const chatId = await this.findChatIdByUsername(cleanUsername);
-      
+
       // Check if this is a bullish signal
       const isBullish = this.isBullishSignal(message);
-      
+
       if (isBullish) {
         // Use Telegraf for messages with buttons (new functionality)
         const keyboard = {
