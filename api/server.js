@@ -267,13 +267,13 @@ app.post('/api/telegram/send-test-signal', asyncHandler(async (req, res) => {
 
   const testSignalMessage = `🚀 **Bullish Alert** 🚀
 
-🏛️ **Token**: PEPE (pepe)
+🏛️ **Token**:  UNI (uniswap)
 📈 **Signal**: Buy
-💰 **Entry Price**: $0.003
+💰 **Entry Price**: $9.37
 🎯 **Targets**:
-TP1: $0.0034
-TP2: $0.0036
-🛑 **Stop Loss**: $0.0028
+TP1: $11.37
+TP2: $13.37
+🛑 **Stop Loss**: $8.37
 ⏳ **Timeline:** Short-term (1-7 days)
 
 💡 **Trade Tip**:

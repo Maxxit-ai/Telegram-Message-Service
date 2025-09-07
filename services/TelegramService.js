@@ -79,42 +79,118 @@ class TelegramService {
           messageText: userData.messageText.substring(0, 100) + '...' // Log first 100 chars
         });
 
-        // Store the comprehensive data in database and get API response
-        const apiResponse = await this.handleSimulateTradeRequest(userData);
+        // Answer callback query immediately to acknowledge user interaction
+        await ctx.answerCbQuery('🔄 Processing trade simulation...');
 
-        // Format reply message based on API response
-        let replyMessage = '';
-        if (apiResponse && apiResponse.status === 'success') {
-          replyMessage = `✅ **Trade Simulation Successful!**\n\n` +
-            `🔹 **Signal ID**: ${apiResponse.signalId}\n` +
-            `🔹 **Network**: ${apiResponse.result?.tradingPair?.networkKey || 'N/A'}\n` +
-            `🔹 **Safe Address**: ${apiResponse.result?.tradingPair?.safeAddress || 'N/A'}\n` +
-            `🔹 **Trade ID**: ${apiResponse.result?.tradingPair?.tradeId || 'N/A'}\n` +
-            `🔹 **Status**: ${apiResponse.result?.tradingPair?.status || 'N/A'}\n\n` +
-            `🚀 Your trade simulation has been processed successfully!`;
+        // Send initial processing message for better UX
+        const processingMessage = await ctx.reply('⏳ **Processing Trade Simulation...**\n\n' +
+          '🔄 Connecting to trading engine...\n' +
+          '📊 Analyzing signal data...\n' +
+          '⚡ Executing simulation...\n\n' +
+          '*This may take a few moments...*');
 
-          await ctx.answerCbQuery('✅ Trade simulation completed successfully!');
-        } else if (apiResponse && apiResponse.status === 'failed') {
-          const errorMsg = apiResponse.result?.error || apiResponse.result?.tradingPair?.error || 'Unknown error';
-          replyMessage = `❌ **Trade Simulation Failed**\n\n` +
-            `🔹 **Signal ID**: ${apiResponse.signalId}\n` +
-            `🔹 **Network**: ${apiResponse.result?.tradingPair?.networkKey || 'N/A'}\n` +
-            `🔹 **Error**: ${errorMsg}\n\n` +
-            `Please try again or contact support if the issue persists.`;
+        // Optional: Update progress every 5 seconds for better UX
+        const progressInterval = setInterval(async () => {
+          try {
+            const dots = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+            const randomDot = dots[Math.floor(Math.random() * dots.length)];
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              processingMessage.message_id,
+              null,
+              `${randomDot} **Processing Trade Simulation...**\n\n` +
+              '🔄 Connecting to trading engine...\n' +
+              '📊 Analyzing signal data...\n' +
+              '⚡ Executing simulation...\n\n' +
+              '*Please wait while we process your request...*',
+              { parse_mode: 'Markdown' }
+            );
+          } catch (editError) {
+            // Message might be too old to edit, just continue
+            console.log('Could not update progress, continuing...');
+          }
+        }, 3000); // Update every 3 seconds
 
-          await ctx.answerCbQuery('❌ Trade simulation failed');
-        } else {
-          // Fallback for unexpected response format
-          replyMessage = '✅ Trade simulation has been initiated for this signal. You will receive updates shortly.';
-          await ctx.answerCbQuery('Trade simulation initiated! 🚀');
+        try {
+          // Store the comprehensive data in database and get API response
+          const apiResponse = await this.handleSimulateTradeRequest(userData);
+          console.log("apiResponse", apiResponse);
+
+          // Clear the progress interval once we have the response
+          clearInterval(progressInterval);
+
+          // Format reply message based on API response
+          let replyMessage = '';
+          if (apiResponse && apiResponse.status === 'success') {
+            // Escape underscores in IDs to prevent Markdown parsing errors
+            const safeAddress = (apiResponse.result?.tradingPair?.safeAddress || 'N/A').replace(/_/g, '\\_');
+            const tradeId = (apiResponse.result?.tradingPair?.tradeId || 'N/A').replace(/_/g, '\\_');
+
+            replyMessage = `✅ **Trade Simulation Successful!**\n\n` +
+              `🔹 **Signal ID**: \`${apiResponse.signalId}\`\n` +
+              `🔹 **Network**: ${apiResponse.result?.tradingPair?.networkKey || 'N/A'}\n` +
+              `🔹 **Safe Address**: \`${safeAddress}\`\n` +
+              `🔹 **Trade ID**: \`${tradeId}\`\n` +
+              `🔹 **Status**: ${apiResponse.result?.tradingPair?.status || 'N/A'}\n\n` +
+              `🚀 Your trade simulation has been processed successfully!`;
+          } else if (apiResponse && apiResponse.status === 'failed') {
+            const errorMsg = (apiResponse.result?.error || apiResponse.result?.tradingPair?.error || 'Unknown error').replace(/_/g, '\\_');
+            replyMessage = `❌ **Trade Simulation Failed**\n\n` +
+              `🔹 **Signal ID**: \`${apiResponse.signalId}\`\n` +
+              `🔹 **Network**: ${apiResponse.result?.tradingPair?.networkKey || 'N/A'}\n` +
+              `🔹 **Error**: \`${errorMsg}\`\n\n` +
+              `Please try again or contact support if the issue persists.`;
+          } else {
+            // Fallback for unexpected response format
+            replyMessage = '✅ Trade simulation has been initiated for this signal. You will receive updates shortly.';
+          }
+
+          // Edit the processing message with the final result
+          await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            processingMessage.message_id,
+            null,
+            replyMessage,
+            { parse_mode: 'Markdown' }
+          );
+
+        } catch (error) {
+          console.error('Error handling simulate trade callback:', error);
+
+          // Clear the progress interval on error
+          clearInterval(progressInterval);
+
+          // Try to answer callback query, but don't fail if it's expired
+          try {
+            await ctx.answerCbQuery('❌ Error processing simulation request');
+          } catch (cbError) {
+            console.log('Callback query already expired, skipping answerCbQuery');
+          }
+
+          // Try to edit the processing message with error, fallback to reply if edit fails
+          try {
+            await ctx.telegram.editMessageText(
+              ctx.chat.id,
+              processingMessage.message_id,
+              null,
+              '❌ Sorry, there was an error processing your trade simulation. Please try again later.',
+              { parse_mode: 'Markdown' }
+            );
+          } catch (editError) {
+            console.log('Could not edit processing message, sending new reply');
+            await ctx.reply('❌ Sorry, there was an error processing your trade simulation. Please try again later.');
+          }
         }
-
-        // Send the formatted reply message
-        await ctx.reply(replyMessage);
-
       } catch (error) {
         console.error('Error handling simulate trade callback:', error);
-        await ctx.answerCbQuery('❌ Error processing simulation request');
+
+        // Try to answer callback query, but don't fail if it's expired
+        try {
+          await ctx.answerCbQuery('❌ Error processing simulation request');
+        } catch (cbError) {
+          console.log('Callback query already expired, skipping answerCbQuery');
+        }
+
         await ctx.reply('❌ Sorry, there was an error processing your trade simulation. Please try again later.');
       }
     });
@@ -240,11 +316,27 @@ class TelegramService {
 
       console.log('Calling signal processing API with body:', apiBody);
 
-      const response = await axios.post('https://safetrading.maxxit.ai/api/signal/process', apiBody, {
+      // const response = await axios.post('https://safetrading.maxxit.ai/api/signal/process', apiBody, {
+      const response = await axios.post('http://localhost:3006/api/signal/process', apiBody, {
         headers: {
           'Content-Type': 'application/json'
         }
       });
+
+      // const response = {
+      //   data: {
+      //     status: 'success',
+      //     signalId: '1234567890',
+      //     result: {
+      //       tradingPair: {
+      //         networkKey: 'arbitrum',
+      //         safeAddress: safeAddress,
+      //         tradeId: '1234567890',
+      //         status: 'initiated'
+      //       }
+      //     }
+      //   }
+      // }
 
       console.log('Signal processing API response:', response.data);
       return response.data;
