@@ -316,27 +316,13 @@ class TelegramService {
 
       console.log('Calling signal processing API with body:', apiBody);
 
-      // const response = await axios.post('https://safetrading.maxxit.ai/api/signal/process', apiBody, {
-      const response = await axios.post('http://localhost:3006/api/signal/process', apiBody, {
+      const response = await axios.post('https://safetrading.maxxit.ai/api/signal/process', apiBody, {
+        // const response = await axios.post('http://localhost:3006/api/signal/process', apiBody, {
         headers: {
           'Content-Type': 'application/json'
         }
       });
 
-      // const response = {
-      //   data: {
-      //     status: 'success',
-      //     signalId: '1234567890',
-      //     result: {
-      //       tradingPair: {
-      //         networkKey: 'arbitrum',
-      //         safeAddress: safeAddress,
-      //         tradeId: '1234567890',
-      //         status: 'initiated'
-      //       }
-      //     }
-      //   }
-      // }
 
       console.log('Signal processing API response:', response.data);
       return response.data;
